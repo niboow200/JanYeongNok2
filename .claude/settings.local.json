@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls \"C:\\\\Users\\\\niboo\\\\.claude\\\\plugins\\\\\")",
+      "PowerShell(npx skills find \"unreal engine\" 2>&1)",
+      "mcp__VibeUE__execute_python_code",
+      "mcp__VibeUE__read_logs",
+      "mcp__VibeUE__manage_skills",
+      "mcp__VibeUE__manage_asset",
+      "PowerShell(\\(Get-Item \"C:\\\\Users\\\\niboo\\\\Documents\\\\Unreal Projects\\\\JanYeongNok2\\\\Source\\\\JanYeongNok2\\\\AI\\\\JYNEnemyBase.cpp\"\\).LastWriteTime = Get-Date; Write-Host \"타임스탬프 업데이트\")",
+      "mcp__VibeUE__discover_python_class",
+      "Bash(\"C:\\\\Program Files\\\\Epic Games\\\\UE_5.7\\\\Engine\\\\Build\\\\BatchFiles\\\\Build.bat\" JanYeongNok2Editor Win64 Development \"C:\\\\Users\\\\niboo\\\\Documents\\\\Unreal Projects\\\\JanYeongNok2\\\\JanYeongNok2.uproject\")"
+    ]
+  }
+}

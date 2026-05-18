@@ -1,0 +1,548 @@
+#include "JYNPlayerCharacter.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
+#include "Components/JYNNaegongComponent.h"
+#include "Components/JYNExperienceComponent.h"
+#include "Abilities/JYNProjectileBase.h"
+#include "AI/JYNEnemyBase.h"
+#include "UI/JYNLevelUpScreen.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraComponent.h"
+#include "EngineUtils.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
+
+AJYNPlayerCharacter::AJYNPlayerCharacter()
+{
+	PrimaryActorTick.bCanEverTick = true;
+
+	// ── 카메라 ──────────────────────────────────────────
+	SpringArm = CreateDefaultSubobject<USpringArmComponent>(TEXT("SpringArm"));
+	SpringArm->SetupAttachment(RootComponent);
+	SpringArm->SetRelativeRotation(FRotator(-70.0f, 0.0f, 0.0f));
+	SpringArm->TargetArmLength = 1500.0f;
+	SpringArm->bDoCollisionTest = false;
+	SpringArm->bInheritPitch = false;
+	SpringArm->bInheritRoll = false;
+	SpringArm->bInheritYaw = false;
+	SpringArm->bEnableCameraLag = true;
+	SpringArm->CameraLagSpeed = 5.0f;
+
+	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	Camera->SetupAttachment(SpringArm);
+	Camera->SetFieldOfView(75.0f);
+
+	// ── 컴포넌트 ──────────────────────────────────────────
+	NaegongComponent = CreateDefaultSubobject<UJYNNaegongComponent>(TEXT("NaegongComponent"));
+	ExperienceComponent = CreateDefaultSubobject<UJYNExperienceComponent>(TEXT("ExperienceComponent"));
+
+	// ── 이동 ──────────────────────────────────────────
+	GetCharacterMovement()->bConstrainToPlane = true;
+	GetCharacterMovement()->bSnapToPlaneAtStart = true;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
+	GetCharacterMovement()->RotationRate = FRotator(0.0f, 640.0f, 0.0f);
+	GetCharacterMovement()->MaxWalkSpeed = 500.0f;
+	GetCharacterMovement()->BrakingDecelerationWalking = 2000.0f;
+
+	// 캐릭터가 컨트롤러 회전을 따르지 않음 (이동 방향을 바라봄)
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationYaw = false;
+	bUseControllerRotationRoll = false;
+}
+
+void AJYNPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	CurrentHP = MaxHP;
+
+	// 이동 기본값 저장 (경공 종료 후 복구용)
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	DefaultMaxWalkSpeed       = MoveComp->MaxWalkSpeed;
+	DefaultMaxAcceleration    = MoveComp->MaxAcceleration;
+	DefaultBrakingDeceleration= MoveComp->BrakingDecelerationWalking;
+	DefaultGroundFriction     = MoveComp->GroundFriction;
+
+	// DashTrailComponent는 대쉬 시작 시 Spawn으로 처리 (BeginPlay에서 불필요)
+
+	// Enhanced Input 매핑 컨텍스트 등록
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+			ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
+		{
+			if (DefaultMappingContext)
+			{
+				Subsystem->AddMappingContext(DefaultMappingContext, 0);
+			}
+		}
+	}
+
+	// 자동 공격 타이머 시작
+	GetWorld()->GetTimerManager().SetTimer(
+		AutoAttackTimerHandle,
+		this,
+		&AJYNPlayerCharacter::PerformAutoAttack,
+		AutoAttackInterval,
+		true
+	);
+}
+
+void AJYNPlayerCharacter::EndPlay(EEndPlayReason::Type EndPlayReason)
+{
+	Super::EndPlay(EndPlayReason);
+	GetWorld()->GetTimerManager().ClearTimer(AutoAttackTimerHandle);
+	GetWorld()->GetTimerManager().ClearTimer(QinggongDurationTimer);
+	GetWorld()->GetTimerManager().ClearTimer(QinggongCooldownTimer);
+	GetWorld()->GetTimerManager().ClearTimer(InvincibilityTimerHandle);
+}
+
+void AJYNPlayerCharacter::NotifyControllerChanged()
+{
+	Super::NotifyControllerChanged();
+}
+
+void AJYNPlayerCharacter::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (bIsRecovering)
+	{
+		UpdateRecovery(DeltaTime);
+	}
+
+	// 대쉬 중 AddMovementInput 유지 → ABP의 ShouldMove(가속도 조건) 충족 → 걷기 애니 재생
+	if (bIsDashing && !DashDirection.IsNearlyZero())
+	{
+		AddMovementInput(DashDirection, 1.0f, true);
+	}
+}
+
+void AJYNPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
+	{
+		if (MoveAction)
+		{
+			EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AJYNPlayerCharacter::OnMove);
+			EIC->BindAction(MoveAction, ETriggerEvent::Completed, this, &AJYNPlayerCharacter::OnMove);
+		}
+		if (DashAction)
+		{
+			EIC->BindAction(DashAction, ETriggerEvent::Triggered, this, &AJYNPlayerCharacter::OnDash);
+		}
+		if (PauseAction)
+		{
+			EIC->BindAction(PauseAction, ETriggerEvent::Triggered, this, &AJYNPlayerCharacter::OnPause);
+		}
+	}
+}
+
+// ── 입력 핸들러 ──────────────────────────────────────────
+
+void AJYNPlayerCharacter::OnMove(const FInputActionValue& Value)
+{
+	const FVector2D Input = Value.Get<FVector2D>();
+
+	if (FMath::IsNearlyZero(Input.SizeSquared())) return;
+
+	// 카메라 고정이므로 월드 축 기준으로 이동
+	AddMovementInput(FVector::ForwardVector, Input.Y);
+	AddMovementInput(FVector::RightVector, Input.X);
+}
+
+void AJYNPlayerCharacter::OnDash(const FInputActionValue& Value)
+{
+	if (!CanDash() || bIsDead) return;
+
+	// 이동 방향 결정 (GetLastMovementInputVector: 실제 입력 벡터, Z=0)
+	FVector DashDir = GetLastMovementInputVector();
+	if (DashDir.IsNearlyZero())
+	{
+		DashDir = GetActorForwardVector();
+	}
+	DashDir.Z = 0.0f;
+	DashDir = DashDir.GetSafeNormal2D();
+
+	bIsDashing    = true;
+	DashDirection = DashDir;
+
+	// 경공 지속 시간 + 0.1s 후까지 무적
+	SetInvincible(QinggongDuration + 0.1f);
+
+	ApplyDashMovementBoost(DashDir);
+
+	// 대쉬 이펙트: 이동 방향의 직각(수직) 방향으로 버스트
+	if (DashTrailSystem)
+	{
+		FRotator PerpRotation = DashDir.Rotation();
+		//PerpRotation.Yaw += 90.0f;
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(), DashTrailSystem,
+			GetActorLocation(),
+			PerpRotation,
+			FVector(1.5f, 1.5f, 1.5f),
+			true, true);
+	}
+
+	BP_OnDashStarted();
+
+	GetWorld()->GetTimerManager().SetTimer(
+		QinggongDurationTimer, this,
+		&AJYNPlayerCharacter::EndQinggong,
+		QinggongDuration, false);
+}
+
+void AJYNPlayerCharacter::ApplyDashMovementBoost(const FVector& Dir)
+{
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	MoveComp->MaxWalkSpeed               = QinggongMaxWalkSpeed;
+	MoveComp->MaxAcceleration            = QinggongMaxAcceleration;
+	MoveComp->BrakingDecelerationWalking = QinggongBrakingDeceleration;
+	MoveComp->GroundFriction             = QinggongGroundFriction;
+	// 즉각 속도 주입 (LaunchCharacter 없이 달리는 느낌)
+	MoveComp->Velocity = Dir * QinggongMaxWalkSpeed;
+}
+
+void AJYNPlayerCharacter::EndQinggong()
+{
+	bIsDashing            = false;
+	// bIsInvincible는 SetInvincible 타이머가 0.1s 뒤에 자동으로 꺼줌
+	bIsQinggongOnCooldown = true;
+	DashDirection         = FVector::ZeroVector;
+
+	// 부드러운 속도 복구 시작
+	bIsRecovering   = true;
+	RecoveryElapsed = 0.0f;
+
+	BP_OnDashStarted(); // BP 훅 (종료 알림 — OnQinggongEnded 추가 원하면 별도 선언)
+
+	GetWorld()->GetTimerManager().SetTimer(
+		QinggongCooldownTimer, this,
+		&AJYNPlayerCharacter::EndQinggongCooldown,
+		DashCooldown, false);
+}
+
+void AJYNPlayerCharacter::EndQinggongCooldown()
+{
+	bIsQinggongOnCooldown = false;
+}
+
+void AJYNPlayerCharacter::UpdateRecovery(float DeltaTime)
+{
+	RecoveryElapsed += DeltaTime;
+	const float Alpha = FMath::Clamp(RecoveryElapsed / QinggongRecoveryDuration, 0.0f, 1.0f);
+
+	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
+	MoveComp->MaxWalkSpeed               = FMath::Lerp(QinggongMaxWalkSpeed,       DefaultMaxWalkSpeed,        Alpha);
+	MoveComp->MaxAcceleration            = FMath::Lerp(QinggongMaxAcceleration,    DefaultMaxAcceleration,     Alpha);
+	MoveComp->BrakingDecelerationWalking = FMath::Lerp(QinggongBrakingDeceleration,DefaultBrakingDeceleration, Alpha);
+	MoveComp->GroundFriction             = FMath::Lerp(QinggongGroundFriction,     DefaultGroundFriction,      Alpha);
+
+	if (Alpha >= 1.0f)
+	{
+		bIsRecovering = false;
+	}
+}
+
+void AJYNPlayerCharacter::OnPause(const FInputActionValue& Value)
+{
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		const bool bIsPaused = PC->IsPaused();
+		PC->SetPause(!bIsPaused);
+	}
+}
+
+// ── 자동 공격 ──────────────────────────────────────────
+
+void AJYNPlayerCharacter::PerformAutoAttack()
+{
+	if (bIsDead || !ProjectileClass) return;
+
+	const int32 TotalShots = 1 + ExtraProjectileCount;
+	TArray<AActor*> Targets = FindEnemiesInRange(TotalShots);
+
+	FVector SpawnLocation = GetActorLocation();
+	SpawnLocation.Z += 40.0f;
+
+	// 메인 발사 방향 (첫 번째 타겟 또는 전방)
+	FVector MainDir;
+	if (Targets.IsValidIndex(0))
+	{
+		MainDir = (Targets[0]->GetActorLocation() - SpawnLocation);
+		MainDir.Z = 0.0f;
+		MainDir = MainDir.GetSafeNormal2D();
+	}
+	else
+	{
+		MainDir = GetActorForwardVector();
+		MainDir.Z = 0.0f;
+		if (MainDir.IsNearlyZero()) MainDir = FVector::ForwardVector;
+		MainDir.Normalize();
+	}
+
+	for (int32 i = 0; i < TotalShots; i++)
+	{
+		AActor* Target = Targets.IsValidIndex(i) ? Targets[i] : nullptr;
+
+		FVector FireDirection;
+		AActor* HomingActorTarget = nullptr;
+
+		if (Target)
+		{
+			FVector ToTarget = Target->GetActorLocation() - SpawnLocation;
+			ToTarget.Z = 0.0f;
+			FireDirection = ToTarget.GetSafeNormal();
+			HomingActorTarget = Target;
+		}
+		else
+		{
+			// 타겟이 없는 추가 발사체: 메인 방향 기준 fan spread (20도 간격)
+			const float SpreadAngle = (i - TotalShots / 2) * 20.0f;
+			FireDirection = MainDir.RotateAngleAxis(SpreadAngle, FVector::UpVector);
+		}
+
+		const FTransform SpawnTransform(FireDirection.Rotation(), SpawnLocation);
+		FActorSpawnParameters Params;
+		Params.Instigator = this;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+		AJYNProjectileBase* Projectile = GetWorld()->SpawnActor<AJYNProjectileBase>(
+			ProjectileClass, SpawnTransform, Params);
+
+		if (Projectile)
+		{
+			Projectile->Damage *= ProjectileDamageMultiplier;
+			Projectile->Launch(FireDirection, HomingActorTarget, this);
+		}
+	}
+}
+
+AActor* AJYNPlayerCharacter::FindNearestEnemyInRange() const
+{
+	AActor* NearestEnemy = nullptr;
+	float NearestDistSq = AutoAttackRange * AutoAttackRange;
+
+	for (TActorIterator<AJYNEnemyBase> It(GetWorld()); It; ++It)
+	{
+		AJYNEnemyBase* Enemy = *It;
+		if (!Enemy || Enemy->IsDead()) continue;
+
+		const float DistSq = FVector::DistSquared(GetActorLocation(), Enemy->GetActorLocation());
+		if (DistSq <= NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			NearestEnemy = Enemy;
+		}
+	}
+
+	return NearestEnemy;
+}
+
+TArray<AActor*> AJYNPlayerCharacter::FindEnemiesInRange(int32 MaxCount) const
+{
+	const float RangeSq = AutoAttackRange * AutoAttackRange;
+	TArray<TPair<float, AActor*>> EnemyDistances;
+
+	for (TActorIterator<AJYNEnemyBase> It(GetWorld()); It; ++It)
+	{
+		AJYNEnemyBase* Enemy = *It;
+		if (!Enemy || Enemy->IsDead()) continue;
+
+		const float DistSq = FVector::DistSquared(GetActorLocation(), Enemy->GetActorLocation());
+		if (DistSq <= RangeSq)
+		{
+			EnemyDistances.Add({ DistSq, Enemy });
+		}
+	}
+
+	// 거리 오름차순 정렬
+	EnemyDistances.Sort([](const TPair<float, AActor*>& A, const TPair<float, AActor*>& B)
+	{
+		return A.Key < B.Key;
+	});
+
+	TArray<AActor*> Result;
+	for (int32 i = 0; i < FMath::Min(MaxCount, EnemyDistances.Num()); i++)
+	{
+		Result.Add(EnemyDistances[i].Value);
+	}
+	return Result;
+}
+
+void AJYNPlayerCharacter::UpdateAutoAttackTimer()
+{
+	GetWorld()->GetTimerManager().ClearTimer(AutoAttackTimerHandle);
+	GetWorld()->GetTimerManager().SetTimer(
+		AutoAttackTimerHandle,
+		this,
+		&AJYNPlayerCharacter::PerformAutoAttack,
+		AutoAttackInterval,
+		true
+	);
+}
+
+void AJYNPlayerCharacter::ApplyLevelUpBonus(int32 NewLevel)
+{
+	// MaxHP +5, 즉시 회복
+	const float HPBonus = 5.0f;
+	MaxHP += HPBonus;
+	CurrentHP = FMath::Min(CurrentHP + HPBonus, MaxHP);
+
+	// MaxNaegong +3
+	if (NaegongComponent)
+	{
+		NaegongComponent->MaxNaegong += 3.0f;
+	}
+
+	// HUD 갱신
+	BP_OnDamaged(CurrentHP, MaxHP);
+}
+
+void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
+{
+	switch (CardType)
+	{
+	case EJYNMugongCardType::AmkiSpeedUp:
+		// 암기 속도 강화: 자동 공격 간격 20% 감소
+		AutoAttackInterval = FMath::Max(0.1f, AutoAttackInterval * 0.8f);
+		UpdateAutoAttackTimer();
+		break;
+
+	case EJYNMugongCardType::NaegongAbsorb:
+		// 내공 흡수 강화: 흡수 효율 +25% (최대 3배)
+		if (NaegongComponent)
+		{
+			NaegongComponent->AbsorbMultiplier = FMath::Min(3.0f, NaegongComponent->AbsorbMultiplier + 0.25f);
+		}
+		break;
+
+	case EJYNMugongCardType::IronBody:
+		// 철신공: 최대 HP +20, 즉시 회복
+		MaxHP += 20.0f;
+		CurrentHP = FMath::Min(CurrentHP + 20.0f, MaxHP);
+		BP_OnDamaged(CurrentHP, MaxHP);
+		break;
+
+	case EJYNMugongCardType::Agility:
+		// 신행술: 기본 이동 속도 10% 증가
+		DefaultMaxWalkSpeed *= 1.1f;
+		if (!bIsDashing && !bIsRecovering)
+		{
+			GetCharacterMovement()->MaxWalkSpeed = DefaultMaxWalkSpeed;
+		}
+		break;
+
+	case EJYNMugongCardType::PoisonFang:
+		// 독침 강화: 투사체 피해 15% 증가 (누적)
+		ProjectileDamageMultiplier *= 1.15f;
+		break;
+
+	case EJYNMugongCardType::NaegongRegen:
+		// 내공 재생: 초당 내공 회복 +2
+		if (NaegongComponent)
+		{
+			NaegongComponent->RegenPerSecond += 2.0f;
+		}
+		break;
+
+	case EJYNMugongCardType::NoForm:
+		// 무형지기: 경공 쿨타임 -0.3s (최소 0.1s)
+		DashCooldown = FMath::Max(0.1f, DashCooldown - 0.3f);
+		break;
+
+	case EJYNMugongCardType::ChasingBullet:
+		// 추혼탄: 유도 반각 20% 확대 (최대 89도)
+		HomingHalfAngle = FMath::Min(89.0f, HomingHalfAngle * 1.2f);
+		break;
+
+	case EJYNMugongCardType::GreatPill:
+		// 대환단: 현재 HP +30 즉시 회복
+		CurrentHP = FMath::Min(MaxHP, CurrentHP + 30.0f);
+		BP_OnDamaged(CurrentHP, MaxHP);
+		break;
+
+	case EJYNMugongCardType::StormRain:
+		// 광풍세우: 추가 투사체 +1
+		ExtraProjectileCount++;
+		break;
+
+	default:
+		break;
+	}
+}
+
+// ── 데미지 / 사망 ──────────────────────────────────────
+
+void AJYNPlayerCharacter::TakeDamageJYN(float Damage, const FVector& HitDirection)
+{
+	if (bIsDead || bIsInvincible || Damage <= 0.0f) return;
+
+	// 내공 먼저 흡수
+	float RemainingDamage = Damage;
+	if (NaegongComponent)
+	{
+		RemainingDamage = NaegongComponent->AbsorbDamage(Damage);
+	}
+
+	// 내공 초과분 → HP 직격
+	if (RemainingDamage > 0.0f)
+	{
+		CurrentHP = FMath::Max(0.0f, CurrentHP - RemainingDamage);
+	}
+
+	BP_OnDamaged(CurrentHP, MaxHP);
+
+	if (CurrentHP <= 0.0f)
+	{
+		bIsDead = true;
+		GetWorld()->GetTimerManager().ClearTimer(InvincibilityTimerHandle);
+		GetCharacterMovement()->DisableMovement();
+		GetWorld()->GetTimerManager().ClearTimer(AutoAttackTimerHandle);
+		BP_OnDied();
+	}
+	else
+	{
+		// 피격 후 짧은 무적 (여러 적 동시 공격 방지)
+		SetInvincible(HitInvincibilityDuration);
+	}
+}
+
+void AJYNPlayerCharacter::RegainNaegongOnHit(float Amount)
+{
+	if (NaegongComponent)
+	{
+		NaegongComponent->RegainOnHit(Amount);
+	}
+}
+
+// ── 무적 ──────────────────────────────────────────────────────
+
+void AJYNPlayerCharacter::SetInvincible(float Duration)
+{
+	bIsInvincible = true;
+
+	// 이미 더 긴 무적이 걸려 있으면 갱신하지 않음
+	const float Remaining = GetWorld()->GetTimerManager().GetTimerRemaining(InvincibilityTimerHandle);
+	if (Remaining >= Duration) return;
+
+	GetWorld()->GetTimerManager().SetTimer(
+		InvincibilityTimerHandle,
+		this,
+		&AJYNPlayerCharacter::ClearInvincibility,
+		Duration,
+		false
+	);
+}
+
+void AJYNPlayerCharacter::ClearInvincibility()
+{
+	bIsInvincible = false;
+}
