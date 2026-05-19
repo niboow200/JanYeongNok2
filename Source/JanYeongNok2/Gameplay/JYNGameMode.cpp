@@ -297,18 +297,22 @@ void AJYNGameMode::OnMugongCardSelected()
 TArray<FJYNMugongCardInfo> AJYNGameMode::GenerateMugongCards(int32 Level)
 {
 	// 카드 풀: {이름, 설명, CardType}
+	// ⚠️ static 사용 금지 - Live Coding이 static 초기값을 갱신하지 못함
 	using CardEntry = TTuple<FString, FString, EJYNMugongCardType>;
-	static const TArray<CardEntry> CardPool = {
-		{ TEXT("암기 속도 강화"), TEXT("자동 공격 간격 20% 감소"),      EJYNMugongCardType::AmkiSpeedUp   },
+	const TArray<CardEntry> CardPool = {
+		// HP
+		{ TEXT("철신공"),       TEXT("최대 HP 20 증가"),                EJYNMugongCardType::IronBody      },
+		{ TEXT("회복신공"),     TEXT("HP 초당 회복량 1 증가"),          EJYNMugongCardType::HPRegen       },
+		{ TEXT("대환단"),       TEXT("현재 HP 30 즉시 회복"),           EJYNMugongCardType::GreatPill     },
+		// 내공
+		{ TEXT("내공 증진"),    TEXT("최대 내공 20 증가"),              EJYNMugongCardType::NaegongMax    },
+		{ TEXT("내공 재생"),    TEXT("내공 초당 회복량 2 증가"),        EJYNMugongCardType::NaegongRegen  },
 		{ TEXT("내공 흡수 강화"), TEXT("피격 시 내공 흡수 효율 25% 증가"), EJYNMugongCardType::NaegongAbsorb },
-		{ TEXT("철신공"),         TEXT("최대 HP 20 증가"),               EJYNMugongCardType::IronBody       },
-		{ TEXT("신행술"),         TEXT("이동 속도 10% 증가"),            EJYNMugongCardType::Agility        },
-		{ TEXT("독침 강화"),      TEXT("암기 피해 15% 증가"),            EJYNMugongCardType::PoisonFang     },
-		{ TEXT("내공 재생"),      TEXT("내공 초당 회복량 2 증가"),       EJYNMugongCardType::NaegongRegen   },
-		{ TEXT("무형지기"),       TEXT("경공 쿨타임 0.3초 감소"),        EJYNMugongCardType::NoForm         },
-		{ TEXT("추혼탄"),         TEXT("암기 유도 반각 20% 확대"),       EJYNMugongCardType::ChasingBullet  },
-		{ TEXT("대환단"),         TEXT("현재 HP 30 즉시 회복"),          EJYNMugongCardType::GreatPill      },
-		{ TEXT("광풍세우"),       TEXT("암기 투사 수 +1"),               EJYNMugongCardType::StormRain      },
+		// 암기 (통합)
+		{ TEXT("암기술"),       TEXT("암기 능력 강화 (피해→간격→반각→투사 순환)"), EJYNMugongCardType::Amgi },
+		// 경공
+		{ TEXT("신행술"),       TEXT("이동 속도 10% 증가"),             EJYNMugongCardType::Agility       },
+		{ TEXT("무형지기"),     TEXT("경공 쿨타임 0.3초 감소"),         EJYNMugongCardType::NoForm        },
 	};
 
 	// 랜덤 셔플 후 3장 선택
@@ -320,6 +324,9 @@ TArray<FJYNMugongCardInfo> AJYNGameMode::GenerateMugongCards(int32 Level)
 		Indices.Swap(i, j);
 	}
 
+	// 플레이어 캐릭터 (암기술 next-stage description용)
+	AJYNPlayerCharacter* Player = Cast<AJYNPlayerCharacter>(GetPlayerPawn());
+
 	TArray<FJYNMugongCardInfo> Result;
 	for (int32 k = 0; k < FMath::Min(3, Indices.Num()); k++)
 	{
@@ -329,6 +336,13 @@ TArray<FJYNMugongCardInfo> AJYNGameMode::GenerateMugongCards(int32 Level)
 		Card.Description = FText::FromString(Entry.Get<1>());
 		Card.Grade       = FMath::Min(Level / 3, 3); // 레벨에 따라 등급 상승
 		Card.CardType    = Entry.Get<2>();
+
+		// 암기술 카드는 현재 스택 단계에 따라 description 동적 변경
+		if (Card.CardType == EJYNMugongCardType::Amgi && Player)
+		{
+			Card.Description = FText::FromString(Player->GetNextAmgiDescription());
+		}
+
 		Result.Add(Card);
 	}
 	return Result;

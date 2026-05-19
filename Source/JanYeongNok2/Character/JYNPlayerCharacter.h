@@ -65,6 +65,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Stats")
 	float CurrentHP = 100.0f;
 
+	/** HP 초당 자동 회복량 (카드로 증가) */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats", meta=(ClampMin=0.0f))
+	float HPRegenPerSecond = 1.0f;
+
 	// ── 누적 업그레이드 스탯 ──────────────────────────────
 public:
 	/** 투사체 피해 배율 (독침 강화 누적) */
@@ -158,6 +162,9 @@ private:
 	bool bIsRecovering = false;
 	bool bIsKnockedBack = false;
 	float RecoveryElapsed = 0.0f;
+
+	/** 암기술 누적 카운터 — 4단계 순환 (피해→간격→반각→투사수) */
+	int32 AmgiStackCount = 0;
 
 	// 이동 기본값 (BeginPlay에서 저장 후 경공 종료 시 복구)
 	float DefaultMaxWalkSpeed = 500.0f;
@@ -260,4 +267,8 @@ public:
 	/** 대쉬 쿨다운 진행률 (0.0 = 방금 사용, 1.0 = 준비완료) */
 	UFUNCTION(BlueprintPure, Category="Dash")
 	float GetDashCooldownProgress() const;
+
+	/** 다음 암기술 선택 시 적용될 효과의 설명 (UI 카드 표시용) */
+	UFUNCTION(BlueprintPure, Category="Mugong")
+	FString GetNextAmgiDescription() const;
 };

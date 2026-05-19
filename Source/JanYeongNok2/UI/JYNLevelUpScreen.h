@@ -7,21 +7,29 @@
 class UButton;
 class UTextBlock;
 
-/** 무공 카드 종류 — 카드 선택 시 어떤 효과를 적용할지 식별 */
+/** 무공 카드 종류 — 카드 선택 시 어떤 효과를 적용할지 식별
+ *  ⚠️ Live Coding 호환을 위해 기존 항목 순서/값은 절대 변경하지 말 것!
+ *     새 항목은 반드시 끝에 추가. */
 UENUM(BlueprintType)
 enum class EJYNMugongCardType : uint8
 {
 	None            UMETA(DisplayName="없음"),
-	AmkiSpeedUp     UMETA(DisplayName="암기 속도 강화"),   // 자동 공격 간격 -20%
-	NaegongAbsorb   UMETA(DisplayName="내공 흡수 강화"),   // 흡수 효율 +25%
-	IronBody        UMETA(DisplayName="철신공"),            // MaxHP +20
-	Agility         UMETA(DisplayName="신행술"),            // 이동 속도 +10%
-	PoisonFang      UMETA(DisplayName="독침 강화"),        // 투사체 피해 +15%
-	NaegongRegen    UMETA(DisplayName="내공 재생"),        // 내공 초당 회복 +2
-	NoForm          UMETA(DisplayName="무형지기"),          // 경공 쿨타임 -0.3s
-	ChasingBullet   UMETA(DisplayName="추혼탄"),            // 유도 반각 +20%
-	GreatPill       UMETA(DisplayName="대환단"),            // 현재 HP +30 즉시
-	StormRain       UMETA(DisplayName="광풍세우"),          // 투사 수 +1
+	// ── 기존 항목 (순서 변경 금지) ──
+	AmkiSpeedUp     UMETA(DisplayName="암기 속도 강화 (deprecated)"),
+	NaegongAbsorb   UMETA(DisplayName="내공 흡수 강화"),
+	IronBody        UMETA(DisplayName="철신공"),
+	Agility         UMETA(DisplayName="신행술"),
+	PoisonFang      UMETA(DisplayName="독침 강화 (deprecated)"),
+	NaegongRegen    UMETA(DisplayName="내공 재생"),
+	NoForm          UMETA(DisplayName="무형지기"),
+	ChasingBullet   UMETA(DisplayName="추혼탄 (deprecated)"),
+	GreatPill       UMETA(DisplayName="대환단"),
+	StormRain       UMETA(DisplayName="광풍세우 (deprecated)"),
+
+	// ── 신규 항목 (끝에만 추가) ──
+	HPRegen         UMETA(DisplayName="회복신공"),       // HP 초당 회복 +1
+	NaegongMax      UMETA(DisplayName="내공 증진"),      // 최대 내공 +20
+	Amgi            UMETA(DisplayName="암기술"),         // 4단계 순환
 };
 
 /** 카드 한 장의 데이터 */

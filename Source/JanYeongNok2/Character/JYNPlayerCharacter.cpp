@@ -132,6 +132,13 @@ void AJYNPlayerCharacter::Tick(float DeltaTime)
 	{
 		AddMovementInput(DashDirection, 1.0f, true);
 	}
+
+	// HP 자동 회복 (사망 상태가 아니고, MaxHP 미만일 때)
+	if (!bIsDead && CurrentHP < MaxHP && HPRegenPerSecond > 0.0f)
+	{
+		CurrentHP = FMath::Min(MaxHP, CurrentHP + HPRegenPerSecond * DeltaTime);
+		BP_OnDamaged(CurrentHP, MaxHP);
+	}
 }
 
 void AJYNPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -425,20 +432,7 @@ void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
 {
 	switch (CardType)
 	{
-	case EJYNMugongCardType::AmkiSpeedUp:
-		// 암기 속도 강화: 자동 공격 간격 20% 감소
-		AutoAttackInterval = FMath::Max(0.1f, AutoAttackInterval * 0.8f);
-		UpdateAutoAttackTimer();
-		break;
-
-	case EJYNMugongCardType::NaegongAbsorb:
-		// 내공 흡수 강화: 흡수 효율 +25% (최대 3배)
-		if (NaegongComponent)
-		{
-			NaegongComponent->AbsorbMultiplier = FMath::Min(3.0f, NaegongComponent->AbsorbMultiplier + 0.25f);
-		}
-		break;
-
+	// ── HP 카테고리 ────────────────────────────────────────
 	case EJYNMugongCardType::IronBody:
 		// 철신공: 최대 HP +20, 즉시 회복
 		MaxHP += 20.0f;
@@ -446,18 +440,28 @@ void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
 		BP_OnDamaged(CurrentHP, MaxHP);
 		break;
 
-	case EJYNMugongCardType::Agility:
-		// 신행술: 기본 이동 속도 10% 증가
-		DefaultMaxWalkSpeed *= 1.1f;
-		if (!bIsDashing && !bIsRecovering)
-		{
-			GetCharacterMovement()->MaxWalkSpeed = DefaultMaxWalkSpeed;
-		}
+	case EJYNMugongCardType::HPRegen:
+		// 회복신공: HP 초당 회복 +1
+		HPRegenPerSecond += 1.0f;
 		break;
 
-	case EJYNMugongCardType::PoisonFang:
-		// 독침 강화: 투사체 피해 15% 증가 (누적)
-		ProjectileDamageMultiplier *= 1.15f;
+	case EJYNMugongCardType::GreatPill:
+		// 대환단: 현재 HP +30 즉시 회복
+		CurrentHP = FMath::Min(MaxHP, CurrentHP + 30.0f);
+		BP_OnDamaged(CurrentHP, MaxHP);
+		break;
+
+	// ── 내공 카테고리 ──────────────────────────────────────
+	case EJYNMugongCardType::NaegongMax:
+		// 내공 증진: 최대 내공 +20, 즉시 채움
+		if (NaegongComponent)
+		{
+			NaegongComponent->MaxNaegong += 20.0f;
+			NaegongComponent->CurrentNaegong = FMath::Min(
+				NaegongComponent->CurrentNaegong + 20.0f, NaegongComponent->MaxNaegong);
+			NaegongComponent->OnNaegongChanged.Broadcast(
+				NaegongComponent->CurrentNaegong, NaegongComponent->MaxNaegong);
+		}
 		break;
 
 	case EJYNMugongCardType::NaegongRegen:
@@ -468,24 +472,66 @@ void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
 		}
 		break;
 
+	case EJYNMugongCardType::NaegongAbsorb:
+		// 내공 흡수 강화: 흡수 효율 +25% (최대 3배)
+		if (NaegongComponent)
+		{
+			NaegongComponent->AbsorbMultiplier = FMath::Min(3.0f, NaegongComponent->AbsorbMultiplier + 0.25f);
+		}
+		break;
+
+	// ── 암기 카테고리 (4단계 순환) ───────────────────────
+	case EJYNMugongCardType::Amgi:
+	{
+		// 순서: 피해 → 간격 → 반각 → 투사 수 → (반복)
+		const int32 Phase = AmgiStackCount % 4;
+		switch (Phase)
+		{
+		case 0: // 암기 피해 +15%
+			ProjectileDamageMultiplier *= 1.15f;
+			break;
+		case 1: // 공격 간격 -20%
+			AutoAttackInterval = FMath::Max(0.1f, AutoAttackInterval * 0.8f);
+			UpdateAutoAttackTimer();
+			break;
+		case 2: // 유도 반각 +20%
+			HomingHalfAngle = FMath::Min(89.0f, HomingHalfAngle * 1.2f);
+			break;
+		case 3: // 투사 수 +1
+			ExtraProjectileCount++;
+			break;
+		}
+		AmgiStackCount++;
+		break;
+	}
+
+	// ── 경공 카테고리 (기존 유지) ─────────────────────────
+	case EJYNMugongCardType::Agility:
+		// 신행술: 기본 이동 속도 10% 증가
+		DefaultMaxWalkSpeed *= 1.1f;
+		if (!bIsDashing && !bIsRecovering)
+		{
+			GetCharacterMovement()->MaxWalkSpeed = DefaultMaxWalkSpeed;
+		}
+		break;
+
 	case EJYNMugongCardType::NoForm:
 		// 무형지기: 경공 쿨타임 -0.3s (최소 0.1s)
 		DashCooldown = FMath::Max(0.1f, DashCooldown - 0.3f);
 		break;
 
+	// ── Deprecated 카드 (혹시라도 호출되면 동일 효과로 fallback) ──
+	case EJYNMugongCardType::AmkiSpeedUp:
+		AutoAttackInterval = FMath::Max(0.1f, AutoAttackInterval * 0.8f);
+		UpdateAutoAttackTimer();
+		break;
+	case EJYNMugongCardType::PoisonFang:
+		ProjectileDamageMultiplier *= 1.15f;
+		break;
 	case EJYNMugongCardType::ChasingBullet:
-		// 추혼탄: 유도 반각 20% 확대 (최대 89도)
 		HomingHalfAngle = FMath::Min(89.0f, HomingHalfAngle * 1.2f);
 		break;
-
-	case EJYNMugongCardType::GreatPill:
-		// 대환단: 현재 HP +30 즉시 회복
-		CurrentHP = FMath::Min(MaxHP, CurrentHP + 30.0f);
-		BP_OnDamaged(CurrentHP, MaxHP);
-		break;
-
 	case EJYNMugongCardType::StormRain:
-		// 광풍세우: 추가 투사체 +1
 		ExtraProjectileCount++;
 		break;
 
@@ -510,6 +556,18 @@ float AJYNPlayerCharacter::GetDashCooldownProgress() const
 
 	const float Remaining = GetWorld()->GetTimerManager().GetTimerRemaining(QinggongCooldownTimer);
 	return FMath::Clamp(1.0f - (Remaining / DashCooldown), 0.0f, 1.0f);
+}
+
+FString AJYNPlayerCharacter::GetNextAmgiDescription() const
+{
+	switch (AmgiStackCount % 4)
+	{
+	case 0: return TEXT("암기 피해 15% 증가");
+	case 1: return TEXT("자동 공격 간격 20% 감소");
+	case 2: return TEXT("유도 반각 20% 확대");
+	case 3: return TEXT("투사 수 +1");
+	default: return TEXT("암기 능력 강화");
+	}
 }
 
 void AJYNPlayerCharacter::TakeDamageJYN(float Damage, const FVector& HitDirection)
