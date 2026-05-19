@@ -43,6 +43,19 @@ public:
 	UPROPERTY(EditAnywhere, Category="Stats", meta=(ClampMin=0.1f, Units="s"))
 	float TouchDamageCooldown = 0.6f;
 
+	// ── 공격 (StateTree 대체, 직선 추격 + 공격) ──
+	/** 공격 사정거리 — 이 거리 안으로 들어오면 공격, 밖이면 추격 */
+	UPROPERTY(EditAnywhere, Category="Combat", meta=(ClampMin=50.0f, Units="cm"))
+	float AttackRange = 180.0f;
+
+	/** 공격 데미지 */
+	UPROPERTY(EditAnywhere, Category="Combat", meta=(ClampMin=0.0f))
+	float AttackDamage = 10.0f;
+
+	/** 공격 쿨타임 */
+	UPROPERTY(EditAnywhere, Category="Combat", meta=(ClampMin=0.1f, Units="s"))
+	float AttackCooldown = 1.5f;
+
 	/** 근접 공격 애니메이션 몽타주 (BP에서 설정) */
 	UPROPERTY(EditAnywhere, Category="Animation")
 	TObjectPtr<UAnimMontage> AttackMontage;
@@ -67,7 +80,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
-	virtual void Tick(float DeltaTime) override;
+	virtual void Tick(float DeltaTime) override;  // 추격 + 공격 (StateTree 대체)
 
 public:
 	UFUNCTION(BlueprintCallable, Category="Damage")
@@ -97,13 +110,26 @@ private:
 	bool bIsDead = false;
 	bool bIsHitStunned = false;
 	float DefaultMaxWalkSpeed = 600.0f;
-	float LastTouchDamageTime = -999.0f;
+	float LastAttackTime = -999.0f;
 	FTimerHandle HitStunTimerHandle;
+	FTimerHandle TouchDamageTimerHandle;
+	TWeakObjectPtr<class AJYNPlayerCharacter> OverlappingPlayer;
 
 	void EndHitStun();
+	void ApplyTouchDamageToPlayer();
+	void PerformAttack(class AJYNPlayerCharacter* Player);
 
 	UFUNCTION()
 	void OnCapsuleBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
 		bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void OnCapsuleEndOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	/** 풀에서 재사용 시 호출 - 상태 초기화 */
+public:
+	void ResetForPool(const FVector& NewLocation);
+	void DeactivateForPool();
 };

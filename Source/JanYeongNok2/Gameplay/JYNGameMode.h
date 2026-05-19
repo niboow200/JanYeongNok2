@@ -115,6 +115,13 @@ private:
 	/** OnPlayerLevelUp에서 생성한 카드 목록 캐시 (CardIndex로 효과 적용 시 참조) */
 	TArray<FJYNMugongCardInfo> PendingMugongCards;
 
+	/** 적 오브젝트 풀 (Destroy 대신 재사용) */
+	UPROPERTY()
+	TArray<TObjectPtr<AJYNEnemyBase>> EnemyPool;
+
+	/** 풀에서 비활성 적을 찾아 재사용하거나, 없으면 새로 Spawn */
+	AJYNEnemyBase* GetOrSpawnEnemy(TSubclassOf<AJYNEnemyBase> EnemyClass, const FVector& Location);
+
 public:
 	AJYNGameMode();
 

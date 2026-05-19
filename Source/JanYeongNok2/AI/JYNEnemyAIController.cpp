@@ -6,9 +6,8 @@ AJYNEnemyAIController::AJYNEnemyAIController()
 	StateTreeAI = CreateDefaultSubobject<UStateTreeAIComponent>(TEXT("StateTreeAI"));
 	check(StateTreeAI);
 
-	// 빙의 즉시 StateTree 시작
-	bStartAILogicOnPossess = true;
+	// StateTree 자동 시작 비활성화 — 추격/공격은 JYNEnemyBase의 Tick에서 직접 처리
+	bStartAILogicOnPossess = false;
 
-	// EnvQuery 정확도를 위해 Pawn에 붙임
 	bAttachToPawn = true;
 }

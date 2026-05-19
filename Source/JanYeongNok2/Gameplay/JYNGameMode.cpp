@@ -209,20 +209,41 @@ void AJYNGameMode::SpawnWave()
 			}
 		}
 
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-		AJYNEnemyBase* Enemy = GetWorld()->SpawnActor<AJYNEnemyBase>(
-			EnemyClass,
-			FTransform(FRotator::ZeroRotator, SpawnLocation),
-			Params
-		);
-
+		AJYNEnemyBase* Enemy = GetOrSpawnEnemy(EnemyClass, SpawnLocation);
 		if (Enemy)
 		{
-			Enemy->OnEnemyDied.AddDynamic(this, &AJYNGameMode::OnEnemyKilled);
+			// AddUniqueDynamic — 풀에서 재사용 시 중복 바인딩 방지
+			Enemy->OnEnemyDied.AddUniqueDynamic(this, &AJYNGameMode::OnEnemyKilled);
 		}
 	}
+}
+
+AJYNEnemyBase* AJYNGameMode::GetOrSpawnEnemy(TSubclassOf<AJYNEnemyBase> EnemyClass, const FVector& Location)
+{
+	if (!EnemyClass) return nullptr;
+
+	// 풀에서 같은 클래스의 비활성 적 찾기
+	for (AJYNEnemyBase* Pooled : EnemyPool)
+	{
+		if (Pooled && Pooled->IsHidden() && Pooled->GetClass() == EnemyClass)
+		{
+			Pooled->ResetForPool(Location);
+			return Pooled;
+		}
+	}
+
+	// 풀에 없으면 새로 spawn 후 풀에 등록
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	AJYNEnemyBase* NewEnemy = GetWorld()->SpawnActor<AJYNEnemyBase>(
+		EnemyClass, FTransform(FRotator::ZeroRotator, Location), Params);
+
+	if (NewEnemy)
+	{
+		EnemyPool.Add(NewEnemy);
+	}
+	return NewEnemy;
 }
 
 void AJYNGameMode::OnEnemyKilled(AJYNEnemyBase* Enemy)
