@@ -124,7 +124,7 @@ protected:
 
 	/** 경공 쿨타임 */
 	UPROPERTY(EditAnywhere, Category="Dash", meta=(ClampMin=0.0f, Units="s"))
-	float DashCooldown = 1.0f;
+	float DashCooldown = 3.0f;
 
 	/** 대쉬 잔상 Niagara 시스템 */
 	UPROPERTY(EditAnywhere, Category="Dash")
@@ -138,6 +138,14 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Stats", meta=(ClampMin=0.0f, Units="s"))
 	float HitInvincibilityDuration = 0.6f;
 
+	/** 피격 시 받는 넉백 힘 (0이면 넉백 없음) */
+	UPROPERTY(EditAnywhere, Category="Stats", meta=(ClampMin=0.0f))
+	float HitKnockbackForce = 400.0f;
+
+	/** 넉백 중 WASD 입력 차단 지속 시간 */
+	UPROPERTY(EditAnywhere, Category="Stats", meta=(ClampMin=0.0f, Units="s"))
+	float KnockbackInputBlockDuration = 0.25f;
+
 	// ── 내부 상태 ──────────────────────────────────────────
 public:
 	UPROPERTY(BlueprintReadOnly, Category="Dash")
@@ -148,6 +156,7 @@ private:
 	bool bIsDead = false;
 	bool bIsQinggongOnCooldown = false;
 	bool bIsRecovering = false;
+	bool bIsKnockedBack = false;
 	float RecoveryElapsed = 0.0f;
 
 	// 이동 기본값 (BeginPlay에서 저장 후 경공 종료 시 복구)
@@ -162,6 +171,7 @@ private:
 	FTimerHandle QinggongDurationTimer;
 	FTimerHandle QinggongCooldownTimer;
 	FTimerHandle InvincibilityTimerHandle; // 피격/경공 무적 공용 타이머
+	FTimerHandle KnockbackTimerHandle;
 
 	// ── 생명주기 ──────────────────────────────────────────
 public:
@@ -200,6 +210,9 @@ protected:
 	/** Duration 동안 무적 설정. 이미 걸려 있으면 더 긴 쪽 유지 */
 	void SetInvincible(float Duration);
 	void ClearInvincibility();
+
+	// ── 넉백 ──────────────────────────────────────────────
+	void EndKnockback();
 
 	// ── 데미지 / 사망 ──────────────────────────────────────
 public:
@@ -243,4 +256,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Dash")
 	bool CanDash() const { return !bIsDashing && !bIsQinggongOnCooldown; }
+
+	/** 대쉬 쿨다운 진행률 (0.0 = 방금 사용, 1.0 = 준비완료) */
+	UFUNCTION(BlueprintPure, Category="Dash")
+	float GetDashCooldownProgress() const;
 };

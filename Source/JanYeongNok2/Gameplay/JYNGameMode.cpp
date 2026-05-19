@@ -4,12 +4,16 @@
 #include "Components/JYNExperienceComponent.h"
 #include "UI/JYNPlayerHUD.h"
 #include "UI/JYNLevelUpScreen.h"
+#include "UI/JYNGameOverScreen.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
 #include "Blueprint/UserWidget.h"
+
+// static 플래그 정의 (PIE 세션 동안 유지)
+bool AJYNGameMode::bSkipMainMenuOnRestart = false;
 
 AJYNGameMode::AJYNGameMode()
 {
@@ -28,8 +32,87 @@ void AJYNGameMode::BeginPlay()
 		PC->SetInputMode(InputMode);
 	}
 
-	// HUD 생성 및 뷰포트 추가
-	if (HUDWidgetClass)
+	// 재도전 클릭으로 들어왔으면 메인메뉴 건너뛰고 바로 게임 시작
+	if (bSkipMainMenuOnRestart)
+	{
+		bSkipMainMenuOnRestart = false;  // 일회성 플래그, 즉시 리셋
+
+		// HUD 생성 (StartRun이 처리하지만 명시적으로 일시정지 안 함)
+		StartRun();
+	}
+	else
+	{
+		ShowMainMenu();
+	}
+}
+
+void AJYNGameMode::ShowMainMenu()
+{
+	UE_LOG(LogTemp, Warning, TEXT("ShowMainMenu() called"));
+	UE_LOG(LogTemp, Warning, TEXT("MainMenuWidgetClass: %s"), MainMenuWidgetClass ? TEXT("Valid") : TEXT("NULL"));
+
+	// 메인 메뉴 위젯 생성
+	if (MainMenuWidgetClass)
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("PlayerController found"));
+			if (!MainMenuWidgetInstance)
+			{
+				MainMenuWidgetInstance = CreateWidget<UUserWidget>(PC, MainMenuWidgetClass);
+				if (MainMenuWidgetInstance)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("MainMenu Widget created successfully"));
+					MainMenuWidgetInstance->AddToViewport(100);
+					UE_LOG(LogTemp, Warning, TEXT("MainMenu Widget added to viewport"));
+				}
+				else
+				{
+					UE_LOG(LogTemp, Error, TEXT("Failed to create MainMenu Widget"));
+				}
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("PlayerController not found"));
+		}
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("MainMenuWidgetClass is NULL - Set it in BP_JYNGameMode"));
+	}
+
+	// 게임 일시정지
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		PC->SetPause(true);
+		UE_LOG(LogTemp, Warning, TEXT("Game paused"));
+	}
+}
+
+void AJYNGameMode::StartRun()
+{
+	if (bRunActive) return;
+
+	bRunActive = true;
+	CurrentScore = 0;
+	CurrentWave = 0;
+
+	// 메인 메뉴 제거
+	if (MainMenuWidgetInstance)
+	{
+		MainMenuWidgetInstance->RemoveFromParent();
+		MainMenuWidgetInstance = nullptr;
+	}
+
+	// 게임 재개
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		PC->SetPause(false);
+	}
+
+	// HUD 생성 및 뷰포트 추가 (아직 없으면)
+	if (!HUDWidgetInstance && HUDWidgetClass)
 	{
 		if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
 		{
@@ -40,17 +123,6 @@ void AJYNGameMode::BeginPlay()
 			}
 		}
 	}
-
-	StartRun();
-}
-
-void AJYNGameMode::StartRun()
-{
-	if (bRunActive) return;
-
-	bRunActive = true;
-	CurrentScore = 0;
-	CurrentWave = 0;
 
 	// 플레이어의 ExperienceComponent에 레벨업 이벤트 바인딩
 	if (AJYNPlayerCharacter* Player = Cast<AJYNPlayerCharacter>(GetPlayerPawn()))
@@ -79,8 +151,25 @@ void AJYNGameMode::EndRun()
 	bRunActive = false;
 	GetWorld()->GetTimerManager().ClearTimer(WaveTimerHandle);
 
-	// 결과 화면은 BP에서 OnScoreChanged 마지막 값으로 표시
-	// TODO: 정수(精髓) 환산 로직 추가
+	// 게임 오버 화면 표시
+	if (GameOverWidgetClass)
+	{
+		if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+		{
+			GameOverWidgetInstance = CreateWidget<UJYNGameOverScreen>(PC, GameOverWidgetClass);
+			if (GameOverWidgetInstance)
+			{
+				GameOverWidgetInstance->SetScore(CurrentScore);
+				GameOverWidgetInstance->AddToViewport();
+			}
+		}
+	}
+
+	// 게임 일시정지
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		PC->SetPause(true);
+	}
 }
 
 void AJYNGameMode::SpawnWave()

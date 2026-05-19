@@ -16,6 +16,10 @@
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "GameFramework/GameModeBase.h"
+#include "Gameplay/JYNGameMode.h"
+#include "Kismet/GameplayStatics.h"
+#include "Components/CapsuleComponent.h"
 
 AJYNPlayerCharacter::AJYNPlayerCharacter()
 {
@@ -53,12 +57,20 @@ AJYNPlayerCharacter::AJYNPlayerCharacter()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationYaw = false;
 	bUseControllerRotationRoll = false;
+
+	// Profile을 Custom으로 변경해야 채널 응답 변경이 적용됨
+	GetCapsuleComponent()->SetCollisionProfileName(TEXT("Custom"));
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 }
 
 void AJYNPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 	CurrentHP = MaxHP;
+
+	// BP/CDO 설정 이후에 강제로 Custom + Pawn Overlap (BP가 'Pawn' 프리셋을 덮어쓰는 문제 해결)
+	GetCapsuleComponent()->SetCollisionProfileName(TEXT("Custom"));
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
 	// 이동 기본값 저장 (경공 종료 후 복구용)
 	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
@@ -148,6 +160,9 @@ void AJYNPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 
 void AJYNPlayerCharacter::OnMove(const FInputActionValue& Value)
 {
+	// 넉백 중 + 사망 시 입력 차단
+	if (bIsKnockedBack || bIsDead) return;
+
 	const FVector2D Input = Value.Get<FVector2D>();
 
 	if (FMath::IsNearlyZero(Input.SizeSquared())) return;
@@ -481,6 +496,22 @@ void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
 
 // ── 데미지 / 사망 ──────────────────────────────────────
 
+void AJYNPlayerCharacter::EndKnockback()
+{
+	bIsKnockedBack = false;
+}
+
+float AJYNPlayerCharacter::GetDashCooldownProgress() const
+{
+	// 쿨다운 중이 아니면 1.0 (준비완료)
+	if (!bIsQinggongOnCooldown) return 1.0f;
+
+	if (!GetWorld() || DashCooldown <= 0.0f) return 1.0f;
+
+	const float Remaining = GetWorld()->GetTimerManager().GetTimerRemaining(QinggongCooldownTimer);
+	return FMath::Clamp(1.0f - (Remaining / DashCooldown), 0.0f, 1.0f);
+}
+
 void AJYNPlayerCharacter::TakeDamageJYN(float Damage, const FVector& HitDirection)
 {
 	if (bIsDead || bIsInvincible || Damage <= 0.0f) return;
@@ -498,6 +529,19 @@ void AJYNPlayerCharacter::TakeDamageJYN(float Damage, const FVector& HitDirectio
 		CurrentHP = FMath::Max(0.0f, CurrentHP - RemainingDamage);
 	}
 
+	// 넉백 적용 (맞은 방향으로) + 일정 시간 WASD 입력 차단
+	if (HitKnockbackForce > 0.0f)
+	{
+		FVector LaunchDir = HitDirection;
+		LaunchDir.Z = 0.0f;
+		LaunchCharacter(LaunchDir.GetSafeNormal() * HitKnockbackForce, true, true);
+
+		bIsKnockedBack = true;
+		GetWorld()->GetTimerManager().SetTimer(
+			KnockbackTimerHandle, this, &AJYNPlayerCharacter::EndKnockback,
+			KnockbackInputBlockDuration, false);
+	}
+
 	BP_OnDamaged(CurrentHP, MaxHP);
 
 	if (CurrentHP <= 0.0f)
@@ -507,6 +551,12 @@ void AJYNPlayerCharacter::TakeDamageJYN(float Damage, const FVector& HitDirectio
 		GetCharacterMovement()->DisableMovement();
 		GetWorld()->GetTimerManager().ClearTimer(AutoAttackTimerHandle);
 		BP_OnDied();
+
+		// 게임 모드에 런 종료 알림
+		if (AJYNGameMode* GameMode = Cast<AJYNGameMode>(GetWorld()->GetAuthGameMode()))
+		{
+			GameMode->EndRun();
+		}
 	}
 	else
 	{

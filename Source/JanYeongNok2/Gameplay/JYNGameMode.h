@@ -7,6 +7,8 @@
 class AJYNEnemyBase;
 class UJYNPlayerHUD;
 class UJYNLevelUpScreen;
+class UJYNGameOverScreen;
+class UUserWidget;
 struct FJYNMugongCardInfo;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnScoreChanged, int32, NewScore);
@@ -26,6 +28,14 @@ class AJYNGameMode : public AGameModeBase
 	GENERATED_BODY()
 
 public:
+	// ── 메인 메뉴 ──────────────────────────────────────────
+	/** 메인 메뉴 위젯 클래스 (BP에서 WBP_MainMenu 설정) */
+	UPROPERTY(EditAnywhere, Category="UI")
+	TSubclassOf<UUserWidget> MainMenuWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> MainMenuWidgetInstance;
+
 	// ── HUD ──────────────────────────────────────────────
 	UPROPERTY(EditAnywhere, Category="UI")
 	TSubclassOf<UJYNPlayerHUD> HUDWidgetClass;
@@ -40,6 +50,14 @@ public:
 
 	UPROPERTY()
 	TObjectPtr<UJYNLevelUpScreen> LevelUpWidgetInstance;
+
+	// ── 게임 오버 화면 ──────────────────────────────────────
+	/** 게임 오버 화면 위젯 클래스 (BP에서 WBP_GameOverScreen 설정) */
+	UPROPERTY(EditAnywhere, Category="UI")
+	TSubclassOf<UJYNGameOverScreen> GameOverWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UJYNGameOverScreen> GameOverWidgetInstance;
 
 	// ── 스폰 설정 ──────────────────────────────────────────
 	/** 스폰할 적 클래스 목록 (BP에서 설정) */
@@ -100,10 +118,18 @@ private:
 public:
 	AJYNGameMode();
 
+	/** 재도전 버튼 → 다음 레벨 시작 시 메인메뉴 건너뛰고 바로 StartRun 호출
+	 *  static이므로 RestartLevel 후에도 유지됨 (PIE 세션 동안) */
+	static bool bSkipMainMenuOnRestart;
+
 protected:
 	virtual void BeginPlay() override;
 
 public:
+	/** 메인 메뉴 표시 */
+	UFUNCTION(BlueprintCallable, Category="UI")
+	void ShowMainMenu();
+
 	/** 런 시작 */
 	UFUNCTION(BlueprintCallable, Category="Run")
 	void StartRun();

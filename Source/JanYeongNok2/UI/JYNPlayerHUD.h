@@ -6,6 +6,8 @@
 
 class UProgressBar;
 class UTextBlock;
+class UImage;
+class UMaterialInstanceDynamic;
 class AJYNPlayerCharacter;
 class AJYNGameMode;
 
@@ -40,6 +42,10 @@ protected:
 	UPROPERTY(meta=(BindWidgetOptional))
 	TObjectPtr<UTextBlock> ScoreText;
 
+	/** 원형 대쉬 쿨다운 인디케이터 (이미지에 radial material 적용) */
+	UPROPERTY(meta=(BindWidgetOptional))
+	TObjectPtr<UImage> DashCooldownIndicator;
+
 	// ── 캐시 ──────────────────────────────────────────────────
 private:
 	UPROPERTY()
@@ -47,6 +53,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<AJYNGameMode> CachedGameMode;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> DashCooldownMID;
 
 protected:
 	virtual void NativeConstruct() override;

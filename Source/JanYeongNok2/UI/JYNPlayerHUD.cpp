@@ -1,6 +1,8 @@
 #include "JYNPlayerHUD.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Components/Image.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Kismet/GameplayStatics.h"
 #include "Character/JYNPlayerCharacter.h"
 #include "Components/JYNNaegongComponent.h"
@@ -17,6 +19,13 @@ void UJYNPlayerHUD::NativeConstruct()
 	if (!XPBar)       XPBar       = Cast<UProgressBar>(GetWidgetFromName(TEXT("XPBar")));
 	if (!LevelText)   LevelText   = Cast<UTextBlock>(GetWidgetFromName(TEXT("LevelText")));
 	if (!ScoreText)   ScoreText   = Cast<UTextBlock>(GetWidgetFromName(TEXT("ScoreText")));
+	if (!DashCooldownIndicator) DashCooldownIndicator = Cast<UImage>(GetWidgetFromName(TEXT("DashCooldownIndicator")));
+
+	// 원형 인디케이터 — Image의 brush material을 dynamic instance로 변환
+	if (DashCooldownIndicator)
+	{
+		DashCooldownMID = DashCooldownIndicator->GetDynamicMaterial();
+	}
 
 	// 플레이어와 GameMode 캐시
 	if (APlayerController* PC = GetOwningPlayer())
@@ -85,5 +94,12 @@ void UJYNPlayerHUD::UpdateHUDValues()
 		{
 			ScoreText->SetText(FText::AsNumber(CachedGameMode->CurrentScore));
 		}
+	}
+
+	// ── 대쉬 쿨다운 인디케이터 ──────────────────────────────
+	if (DashCooldownMID)
+	{
+		// Progress 0.0(방금 사용) → 1.0(준비완료)
+		DashCooldownMID->SetScalarParameterValue(TEXT("Progress"), CachedPlayer->GetDashCooldownProgress());
 	}
 }
