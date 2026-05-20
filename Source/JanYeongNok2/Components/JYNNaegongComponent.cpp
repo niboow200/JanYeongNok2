@@ -42,6 +42,14 @@ void UJYNNaegongComponent::RegainOnHit(float Amount)
 	SetNaegong(FMath::Min(MaxNaegong, CurrentNaegong + Amount));
 }
 
+float UJYNNaegongComponent::UseNaegong(float Amount)
+{
+	if (Amount <= 0.0f) return 0.0f;
+	const float ActualUsed = FMath::Min(Amount, CurrentNaegong);
+	SetNaegong(CurrentNaegong - ActualUsed);
+	return ActualUsed;
+}
+
 void UJYNNaegongComponent::SetNaegong(float NewValue)
 {
 	CurrentNaegong = FMath::Clamp(NewValue, 0.0f, MaxNaegong);

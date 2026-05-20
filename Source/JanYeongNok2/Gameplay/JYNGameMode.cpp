@@ -331,12 +331,14 @@ TArray<FJYNMugongCardInfo> AJYNGameMode::GenerateMugongCards(int32 Level)
 		{ TEXT("내공 흡수 강화"), TEXT("피격 시 내공 흡수 효율 25% 증가"), EJYNMugongCardType::NaegongAbsorb },
 		// 암기 (통합)
 		{ TEXT("암기술"),       TEXT("암기 능력 강화 (피해→간격→반각→투사 순환)"), EJYNMugongCardType::Amgi },
+		// 표창 (통합 — 활성화 → 개수/가속/데미지 순환)
+		{ TEXT("표창"),         TEXT("회전 표창"),                    EJYNMugongCardType::Pyochang      },
 		// 경공
 		{ TEXT("신행술"),       TEXT("이동 속도 10% 증가"),             EJYNMugongCardType::Agility       },
 		{ TEXT("무형지기"),     TEXT("경공 쿨타임 0.3초 감소"),         EJYNMugongCardType::NoForm        },
 	};
 
-	// 랜덤 셔플 후 3장 선택
+	// 랜덤 셔플 후 3장 선택 (표창은 통합 카드 한 장이라 별도 필터링 불필요)
 	TArray<int32> Indices;
 	for (int32 i = 0; i < CardPool.Num(); i++) Indices.Add(i);
 	for (int32 i = Indices.Num() - 1; i > 0; i--)
@@ -362,6 +364,12 @@ TArray<FJYNMugongCardInfo> AJYNGameMode::GenerateMugongCards(int32 Level)
 		if (Card.CardType == EJYNMugongCardType::Amgi && Player)
 		{
 			Card.Description = FText::FromString(Player->GetNextAmgiDescription());
+		}
+
+		// 표창 카드 description 동적 변경 (활성화 / 개수+ / 가속+ / 데미지+)
+		if (Card.CardType == EJYNMugongCardType::Pyochang && Player)
+		{
+			Card.Description = FText::FromString(Player->GetNextPyochangDescription());
 		}
 
 		Result.Add(Card);

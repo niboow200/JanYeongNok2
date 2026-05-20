@@ -27,7 +27,7 @@ public:
 
 	/** 초당 자동 회복량 */
 	UPROPERTY(EditAnywhere, Category="Naegong", meta=(ClampMin=0.0f))
-	float RegenPerSecond = 2.0f;
+	float RegenPerSecond = 1.0f;
 
 	/** 피격 흡수 효율 배율 (1.0 = 1:1, 1.25 = 25% 더 효율적으로 흡수)
 	 *  AbsorbMultiplier 만큼 피해를 흡수하되, 내공 소모는 흡수량 / AbsorbMultiplier */
@@ -56,6 +56,10 @@ public:
 	/** 평타 적중 시 소량 내공 회복 */
 	UFUNCTION(BlueprintCallable, Category="Naegong")
 	void RegainOnHit(float Amount);
+
+	/** 내공 직접 소모 (경공 등 능동 사용) — 부족해도 0으로 클램프, 반환=실제 소모량 */
+	UFUNCTION(BlueprintCallable, Category="Naegong")
+	float UseNaegong(float Amount);
 
 	UFUNCTION(BlueprintPure, Category="Naegong")
 	float GetNaegongRatio() const { return MaxNaegong > 0.0f ? CurrentNaegong / MaxNaegong : 0.0f; }

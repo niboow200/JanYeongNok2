@@ -13,6 +13,7 @@ class UInputAction;
 class UJYNNaegongComponent;
 class UJYNExperienceComponent;
 class AJYNProjectileBase;
+class AJYNPyochangOrbit;
 struct FInputActionValue;
 
 // JYNLevelUpScreen.h에서 정의된 enum 전방 선언
@@ -67,7 +68,7 @@ public:
 
 	/** HP 초당 자동 회복량 (카드로 증가) */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Stats", meta=(ClampMin=0.0f))
-	float HPRegenPerSecond = 1.0f;
+	float HPRegenPerSecond = 0.5f;
 
 	// ── 누적 업그레이드 스탯 ──────────────────────────────
 public:
@@ -79,6 +80,15 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Stats")
 	int32 ExtraProjectileCount = 0;
 
+	// ── 표창(회전) ──────────────────────────────────────
+	/** BP에서 설정할 표창 액터 클래스 */
+	UPROPERTY(EditAnywhere, Category="Pyochang")
+	TSubclassOf<AJYNPyochangOrbit> PyochangOrbitClass;
+
+	/** 현재 활성화된 표창 orbit 액터 (없으면 nullptr) */
+	UPROPERTY(BlueprintReadOnly, Category="Pyochang")
+	TObjectPtr<AJYNPyochangOrbit> PyochangOrbitInstance;
+
 	// ── 자동 공격 ──────────────────────────────────────────
 protected:
 	/** 발사할 투사체 클래스 (BP에서 설정) */
@@ -87,7 +97,7 @@ protected:
 
 	/** 자동 공격 간격 (초) */
 	UPROPERTY(EditAnywhere, Category="AutoAttack", meta=(ClampMin=0.1f, Units="s"))
-	float AutoAttackInterval = 0.5f;
+	float AutoAttackInterval = 0.35f;
 
 	/** 자동 공격 사거리 */
 	UPROPERTY(EditAnywhere, Category="AutoAttack", meta=(ClampMin=100.0f, Units="cm"))
@@ -130,6 +140,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Dash", meta=(ClampMin=0.0f, Units="s"))
 	float DashCooldown = 3.0f;
 
+	/** 경공 1회 사용 시 소모되는 내공 (0이면 무료) */
+	UPROPERTY(EditAnywhere, Category="Dash", meta=(ClampMin=0.0f))
+	float DashNaegongCost = 5.0f;
+
 	/** 대쉬 잔상 Niagara 시스템 */
 	UPROPERTY(EditAnywhere, Category="Dash")
 	TObjectPtr<UNiagaraSystem> DashTrailSystem;
@@ -163,8 +177,14 @@ private:
 	bool bIsKnockedBack = false;
 	float RecoveryElapsed = 0.0f;
 
-	/** 암기술 누적 카운터 — 4단계 순환 (피해→간격→반각→투사수) */
+	/** 암기술 누적 카운터 — phase index. maxed phase는 skip됨 */
 	int32 AmgiStackCount = 0;
+
+	/** 표창 누적 카운터 — 0=미활성, 1+=활성화된 후 누적 횟수 */
+	int32 PyochangStackCount = 0;
+
+	/** 표창 회전 속도 최대치 (이 값 도달 시 속도 카드 카테고리 skip) */
+	static constexpr float MaxPyochangRotation = 480.0f;
 
 	// 이동 기본값 (BeginPlay에서 저장 후 경공 종료 시 복구)
 	float DefaultMaxWalkSpeed = 500.0f;
@@ -240,6 +260,18 @@ public:
 	/** 선택한 무공 카드 효과 적용 */
 	void ApplyMugongCard(EJYNMugongCardType CardType);
 
+	/** 표창 개수 카드 — 첫 호출 활성화 + 3개, 이후 +1개 */
+	UFUNCTION(BlueprintCallable, Category="Pyochang")
+	void GrantPyochang();
+
+	/** 표창 회전 속도 +25% (표창 보유 시에만 적용) */
+	UFUNCTION(BlueprintCallable, Category="Pyochang")
+	void GrantPyochangSpeed();
+
+	/** 표창 데미지 +20% (표창 보유 시에만 적용) */
+	UFUNCTION(BlueprintCallable, Category="Pyochang")
+	void GrantPyochangDamage();
+
 	// ── BP 이벤트 ──────────────────────────────────────────
 	UFUNCTION(BlueprintImplementableEvent, Category="Events", meta=(DisplayName="OnDamaged"))
 	void BP_OnDamaged(float RemainingHP, float MaxHPVal);
@@ -271,4 +303,17 @@ public:
 	/** 다음 암기술 선택 시 적용될 효과의 설명 (UI 카드 표시용) */
 	UFUNCTION(BlueprintPure, Category="Mugong")
 	FString GetNextAmgiDescription() const;
+
+	/** 다음 표창 카드 선택 시 적용될 효과의 설명 */
+	UFUNCTION(BlueprintPure, Category="Pyochang")
+	FString GetNextPyochangDescription() const;
+
+private:
+	/** 암기 4-phase 중 available한 다음 phase 인덱스 반환 (모두 max면 -1) */
+	int32 GetNextAmgiPhase() const;
+	bool IsAmgiPhaseAvailable(int32 Phase) const;
+
+	/** 표창 3-phase (개수/가속/데미지) 중 available한 다음 phase */
+	int32 GetNextPyochangPhase() const;
+	bool IsPyochangPhaseAvailable(int32 Phase) const;
 };

@@ -9,6 +9,7 @@
 #include "Components/JYNNaegongComponent.h"
 #include "Components/JYNExperienceComponent.h"
 #include "Abilities/JYNProjectileBase.h"
+#include "Abilities/JYNPyochangOrbit.h"
 #include "AI/JYNEnemyBase.h"
 #include "UI/JYNLevelUpScreen.h"
 #include "NiagaraFunctionLibrary.h"
@@ -182,6 +183,12 @@ void AJYNPlayerCharacter::OnMove(const FInputActionValue& Value)
 void AJYNPlayerCharacter::OnDash(const FInputActionValue& Value)
 {
 	if (!CanDash() || bIsDead) return;
+
+	// 내공 소모 (부족해도 대쉬는 가능 — 단순 cost only)
+	if (NaegongComponent && DashNaegongCost > 0.0f)
+	{
+		NaegongComponent->UseNaegong(DashNaegongCost);
+	}
 
 	// 이동 방향 결정 (GetLastMovementInputVector: 실제 입력 벡터, Z=0)
 	FVector DashDir = GetLastMovementInputVector();
@@ -480,30 +487,41 @@ void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
 		}
 		break;
 
-	// ── 암기 카테고리 (4단계 순환) ───────────────────────
+	// ── 암기 카테고리 (4단계 순환, maxed phase는 skip) ───
 	case EJYNMugongCardType::Amgi:
 	{
-		// 순서: 피해 → 간격 → 반각 → 투사 수 → (반복)
-		const int32 Phase = AmgiStackCount % 4;
+		const int32 Phase = GetNextAmgiPhase();
 		switch (Phase)
 		{
 		case 0: // 암기 피해 +15%
 			ProjectileDamageMultiplier *= 1.15f;
 			break;
-		case 1: // 공격 간격 -20%
+		case 1: // 공격 간격 -20% (최소 0.1s)
 			AutoAttackInterval = FMath::Max(0.1f, AutoAttackInterval * 0.8f);
 			UpdateAutoAttackTimer();
 			break;
-		case 2: // 유도 반각 +20%
+		case 2: // 유도 반각 +20% (최대 89도)
 			HomingHalfAngle = FMath::Min(89.0f, HomingHalfAngle * 1.2f);
 			break;
 		case 3: // 투사 수 +1
 			ExtraProjectileCount++;
 			break;
 		}
-		AmgiStackCount++;
+		// 다음 호출 시 Phase 다음부터 시작 (사이클 진행)
+		if (Phase >= 0) AmgiStackCount = Phase + 1;
 		break;
 	}
+
+	// ── 표창 카테고리 ─────────────────────────────────────
+	case EJYNMugongCardType::Pyochang:
+		GrantPyochang();
+		break;
+	case EJYNMugongCardType::PyochangSpeed:
+		GrantPyochangSpeed();
+		break;
+	case EJYNMugongCardType::PyochangDamage:
+		GrantPyochangDamage();
+		break;
 
 	// ── 경공 카테고리 (기존 유지) ─────────────────────────
 	case EJYNMugongCardType::Agility:
@@ -558,9 +576,76 @@ float AJYNPlayerCharacter::GetDashCooldownProgress() const
 	return FMath::Clamp(1.0f - (Remaining / DashCooldown), 0.0f, 1.0f);
 }
 
+void AJYNPlayerCharacter::GrantPyochang()
+{
+	if (!PyochangOrbitClass) return;
+
+	// 1번째: 활성화 (3개로 시작)
+	if (!PyochangOrbitInstance)
+	{
+		FActorSpawnParameters Params;
+		Params.Owner = this;
+		Params.Instigator = this;
+		PyochangOrbitInstance = GetWorld()->SpawnActor<AJYNPyochangOrbit>(
+			PyochangOrbitClass, GetActorLocation(), FRotator::ZeroRotator, Params);
+
+		if (PyochangOrbitInstance)
+		{
+			PyochangOrbitInstance->AttachToActor(this,
+				FAttachmentTransformRules::KeepRelativeTransform);
+			PyochangOrbitInstance->SetActorRelativeLocation(FVector::ZeroVector);
+
+			if (USceneComponent* Root = PyochangOrbitInstance->GetRootComponent())
+			{
+				Root->SetUsingAbsoluteRotation(true);
+				Root->SetWorldRotation(FRotator::ZeroRotator);
+			}
+
+			PyochangOrbitInstance->PyochangCount = 3;
+			PyochangOrbitInstance->RebuildPyochangs();
+			PyochangOrbitInstance->SetDamageMultiplier(ProjectileDamageMultiplier);
+		}
+
+		PyochangStackCount = 1;  // 활성화됨
+		return;
+	}
+
+	// 2번째 이후: 사이클 (개수 → 가속 → 데미지)
+	const int32 Phase = GetNextPyochangPhase();
+	switch (Phase)
+	{
+	case 0:  // 개수 +1
+		PyochangOrbitInstance->PyochangCount = FMath::Min(12, PyochangOrbitInstance->PyochangCount + 1);
+		PyochangOrbitInstance->RebuildPyochangs();
+		break;
+	case 1:  // 회전 속도 +25% (최대치 cap)
+		PyochangOrbitInstance->RotationSpeed = FMath::Min(MaxPyochangRotation, PyochangOrbitInstance->RotationSpeed * 1.25f);
+		break;
+	case 2:  // 데미지 +20%
+		PyochangOrbitInstance->Damage *= 1.20f;
+		break;
+	}
+	PyochangStackCount = (Phase + 1) + 1;  // Phase 다음으로 진행 (다음 호출 시 시작점)
+}
+
+void AJYNPlayerCharacter::GrantPyochangSpeed()
+{
+	// Deprecated — Pyochang 카드에 통합됨. 혹시 호출되면 단독 효과만.
+	if (!PyochangOrbitInstance) return;
+	PyochangOrbitInstance->RotationSpeed = FMath::Min(MaxPyochangRotation, PyochangOrbitInstance->RotationSpeed * 1.25f);
+}
+
+void AJYNPlayerCharacter::GrantPyochangDamage()
+{
+	// Deprecated — Pyochang 카드에 통합됨. 혹시 호출되면 단독 효과만.
+	if (!PyochangOrbitInstance) return;
+	PyochangOrbitInstance->Damage *= 1.20f;
+}
+
 FString AJYNPlayerCharacter::GetNextAmgiDescription() const
 {
-	switch (AmgiStackCount % 4)
+	const int32 Phase = GetNextAmgiPhase();
+	switch (Phase)
 	{
 	case 0: return TEXT("암기 피해 15% 증가");
 	case 1: return TEXT("자동 공격 간격 20% 감소");
@@ -568,6 +653,77 @@ FString AJYNPlayerCharacter::GetNextAmgiDescription() const
 	case 3: return TEXT("투사 수 +1");
 	default: return TEXT("암기 능력 강화");
 	}
+}
+
+FString AJYNPlayerCharacter::GetNextPyochangDescription() const
+{
+	if (!PyochangOrbitInstance)
+	{
+		return TEXT("회전 표창 활성화 (3개)");
+	}
+
+	const int32 Phase = GetNextPyochangPhase();
+	switch (Phase)
+	{
+	case 0: return TEXT("표창 +1개");
+	case 1: return TEXT("회전 속도 +25%");
+	case 2: return TEXT("데미지 +20%");
+	default: return TEXT("표창 강화");
+	}
+}
+
+// ── Amgi Phase 헬퍼 ────────────────────────────────────
+
+int32 AJYNPlayerCharacter::GetNextAmgiPhase() const
+{
+	const int32 Start = AmgiStackCount % 4;
+	for (int32 i = 0; i < 4; i++)
+	{
+		const int32 P = (Start + i) % 4;
+		if (IsAmgiPhaseAvailable(P)) return P;
+	}
+	return -1;  // 모두 maxed (실제로는 피해/투사가 항상 available이라 발생 안 함)
+}
+
+bool AJYNPlayerCharacter::IsAmgiPhaseAvailable(int32 Phase) const
+{
+	switch (Phase)
+	{
+	case 0: return true;  // 피해 — 항상
+	case 1: return AutoAttackInterval > 0.1f + KINDA_SMALL_NUMBER;  // 간격이 0.1s 초과 시만
+	case 2: return HomingHalfAngle < 89.0f - KINDA_SMALL_NUMBER;     // 반각이 89도 미만일 때만
+	case 3: return true;  // 투사 — 항상
+	}
+	return false;
+}
+
+// ── Pyochang Phase 헬퍼 ────────────────────────────────
+
+int32 AJYNPlayerCharacter::GetNextPyochangPhase() const
+{
+	if (!PyochangOrbitInstance) return -1;  // 활성화 전엔 phase 없음
+
+	// 활성화 후 (PyochangStackCount=1)부터 사이클: 0=개수, 1=가속, 2=데미지
+	// PyochangStackCount-1을 3으로 나눈 나머지가 다음 phase
+	const int32 Start = ((PyochangStackCount - 1) % 3 + 3) % 3;
+	for (int32 i = 0; i < 3; i++)
+	{
+		const int32 P = (Start + i) % 3;
+		if (IsPyochangPhaseAvailable(P)) return P;
+	}
+	return 2;  // fallback (데미지는 항상 available)
+}
+
+bool AJYNPlayerCharacter::IsPyochangPhaseAvailable(int32 Phase) const
+{
+	if (!PyochangOrbitInstance) return false;
+	switch (Phase)
+	{
+	case 0: return PyochangOrbitInstance->PyochangCount < 12;            // 개수
+	case 1: return PyochangOrbitInstance->RotationSpeed < MaxPyochangRotation - KINDA_SMALL_NUMBER;  // 가속
+	case 2: return true;                                                  // 데미지 — 항상
+	}
+	return false;
 }
 
 void AJYNPlayerCharacter::TakeDamageJYN(float Damage, const FVector& HitDirection)

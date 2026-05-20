@@ -30,6 +30,9 @@ enum class EJYNMugongCardType : uint8
 	HPRegen         UMETA(DisplayName="회복신공"),       // HP 초당 회복 +1
 	NaegongMax      UMETA(DisplayName="내공 증진"),      // 최대 내공 +20
 	Amgi            UMETA(DisplayName="암기술"),         // 4단계 순환
+	Pyochang        UMETA(DisplayName="표창"),           // 회전 표창 활성화 / +1개
+	PyochangSpeed   UMETA(DisplayName="표창 가속"),      // 회전 속도 +25%
+	PyochangDamage  UMETA(DisplayName="표창 강화"),      // 데미지 +20%
 };
 
 /** 카드 한 장의 데이터 */
