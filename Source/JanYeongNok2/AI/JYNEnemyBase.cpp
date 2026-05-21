@@ -9,6 +9,7 @@
 #include "TimerManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Navigation/PathFollowingComponent.h"
 
 AJYNEnemyBase::AJYNEnemyBase()
 {
@@ -292,10 +293,17 @@ void AJYNEnemyBase::ResetForPool(const FVector& NewLocation)
 		MeshComp->RefreshBoneTransforms();
 	}
 
-	// 4) AI Controller 재생성
+	// 4) AI Controller 재생성 + PathFollowing 강제 비활성화
 	if (!GetController())
 	{
 		SpawnDefaultController();
+	}
+	if (AAIController* AIC = Cast<AAIController>(GetController()))
+	{
+		if (UPathFollowingComponent* PathFC = AIC->FindComponentByClass<UPathFollowingComponent>())
+		{
+			PathFC->Deactivate();
+		}
 	}
 
 	// 5) 마지막에 visible 처리 (새 pose가 이미 적용된 상태)

@@ -194,20 +194,26 @@ void AJYNGameMode::SpawnWave()
 		TSubclassOf<AJYNEnemyBase> EnemyClass = EnemyClasses[ClassIdx];
 		if (!EnemyClass) continue;
 
-		// 플레이어 주변 랜덤 위치 (NavMesh 위)
-		FNavLocation SpawnNavLocation;
-		const FVector RandDir = FMath::VRand();
-		const float RandDist = FMath::RandRange(SpawnMinDistance, SpawnMaxDistance);
-		const FVector DesiredLocation = PlayerLocation + FVector(RandDir.X, RandDir.Y, 0.0f) * RandDist;
+		// 플레이어 주변 NavMesh 위 랜덤 위치 — 못 찾으면 최대 12회 retry
+		if (!NavSys) continue;
 
-		FVector SpawnLocation = DesiredLocation;
-		if (NavSys)
+		FNavLocation SpawnNavLocation;
+		FVector SpawnLocation;
+		bool bFound = false;
+		for (int32 Retry = 0; Retry < 12; Retry++)
 		{
-			if (NavSys->GetRandomReachablePointInRadius(DesiredLocation, 300.0f, SpawnNavLocation))
+			const FVector RandDir = FMath::VRand();
+			const float RandDist = FMath::RandRange(SpawnMinDistance, SpawnMaxDistance);
+			const FVector DesiredLocation = PlayerLocation + FVector(RandDir.X, RandDir.Y, 0.0f) * RandDist;
+
+			if (NavSys->GetRandomReachablePointInRadius(DesiredLocation, 500.0f, SpawnNavLocation))
 			{
 				SpawnLocation = SpawnNavLocation.Location;
+				bFound = true;
+				break;
 			}
 		}
+		if (!bFound) continue;  // 12회 시도해도 NavMesh 안에서 못 찾으면 스킵
 
 		AJYNEnemyBase* Enemy = GetOrSpawnEnemy(EnemyClass, SpawnLocation);
 		if (Enemy)

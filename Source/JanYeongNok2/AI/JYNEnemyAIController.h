@@ -21,4 +21,7 @@ class AJYNEnemyAIController : public AAIController
 
 public:
 	AJYNEnemyAIController();
+
+protected:
+	virtual void OnPossess(APawn* InPawn) override;
 };
