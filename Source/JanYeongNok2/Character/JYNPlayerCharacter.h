@@ -80,6 +80,10 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category="Stats")
 	int32 ExtraProjectileCount = 0;
 
+	/** XP Soul 흡수 범위 보너스 (카드로 누적) — XPSoul.MagnetRange에 더해짐 */
+	UPROPERTY(BlueprintReadOnly, Category="Stats")
+	float XPMagnetBonus = 0.0f;
+
 	// ── 표창(회전) ──────────────────────────────────────
 	/** BP에서 설정할 표창 액터 클래스 */
 	UPROPERTY(EditAnywhere, Category="Pyochang")

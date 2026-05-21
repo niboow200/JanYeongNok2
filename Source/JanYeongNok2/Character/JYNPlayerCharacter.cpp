@@ -523,6 +523,12 @@ void AJYNPlayerCharacter::ApplyMugongCard(EJYNMugongCardType CardType)
 		GrantPyochangDamage();
 		break;
 
+	// ── 기타: XP 흡수 범위 ─────────────────────────────
+	case EJYNMugongCardType::XPMagnet:
+		// 최대 10회 (50cm × 10 = 500cm)
+		XPMagnetBonus = FMath::Min(500.0f, XPMagnetBonus + 50.0f);
+		break;
+
 	// ── 경공 카테고리 (기존 유지) ─────────────────────────
 	case EJYNMugongCardType::Agility:
 		// 신행술: 기본 이동 속도 10% 증가

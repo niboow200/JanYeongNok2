@@ -11,6 +11,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
 #include "Blueprint/UserWidget.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundBase.h"
 
 // static 플래그 정의 (PIE 세션 동안 유지)
 bool AJYNGameMode::bSkipMainMenuOnRestart = false;
@@ -32,6 +34,9 @@ void AJYNGameMode::BeginPlay()
 		PC->SetInputMode(InputMode);
 	}
 
+	// BGM 시작 (게임 시작부터 종료까지 반복)
+	StartBGM();
+
 	// 재도전 클릭으로 들어왔으면 메인메뉴 건너뛰고 바로 게임 시작
 	if (bSkipMainMenuOnRestart)
 	{
@@ -43,6 +48,40 @@ void AJYNGameMode::BeginPlay()
 	else
 	{
 		ShowMainMenu();
+	}
+}
+
+// ── BGM ───────────────────────────────────────────────────
+
+void AJYNGameMode::StartBGM()
+{
+	if (!BGMSound) return;
+	if (BGMComponent && BGMComponent->IsPlaying()) return;
+
+	BGMComponent = UGameplayStatics::CreateSound2D(this, BGMSound, BGMVolume);
+	if (BGMComponent)
+	{
+		BGMComponent->bAutoDestroy = false;
+		BGMComponent->OnAudioFinished.AddDynamic(this, &AJYNGameMode::OnBGMFinished);
+		BGMComponent->Play();
+	}
+}
+
+void AJYNGameMode::StopBGM()
+{
+	if (BGMComponent)
+	{
+		BGMComponent->OnAudioFinished.RemoveAll(this);
+		BGMComponent->Stop();
+	}
+}
+
+void AJYNGameMode::OnBGMFinished()
+{
+	// 사운드가 끝나면 자동 재생 (SoundWave가 loop 설정 안 되어 있어도 작동)
+	if (BGMComponent)
+	{
+		BGMComponent->Play();
 	}
 }
 
@@ -339,22 +378,33 @@ TArray<FJYNMugongCardInfo> AJYNGameMode::GenerateMugongCards(int32 Level)
 		{ TEXT("암기술"),       TEXT("암기 능력 강화 (피해→간격→반각→투사 순환)"), EJYNMugongCardType::Amgi },
 		// 표창 (통합 — 활성화 → 개수/가속/데미지 순환)
 		{ TEXT("표창"),         TEXT("회전 표창"),                    EJYNMugongCardType::Pyochang      },
+		// 기타
+		{ TEXT("혼령통찰"),     TEXT("XP 흡수 범위 50cm 증가"),      EJYNMugongCardType::XPMagnet      },
 		// 경공
 		{ TEXT("신행술"),       TEXT("이동 속도 10% 증가"),             EJYNMugongCardType::Agility       },
 		{ TEXT("무형지기"),     TEXT("경공 쿨타임 0.3초 감소"),         EJYNMugongCardType::NoForm        },
 	};
 
-	// 랜덤 셔플 후 3장 선택 (표창은 통합 카드 한 장이라 별도 필터링 불필요)
+	// 플레이어 캐릭터 (필터링 + description용)
+	AJYNPlayerCharacter* Player = Cast<AJYNPlayerCharacter>(GetPlayerPawn());
+
+	// 랜덤 셔플 후 3장 선택 — XPMagnet은 max 도달 시 제외
+	const bool bXPMagnetMaxed = Player && Player->XPMagnetBonus >= 500.0f - KINDA_SMALL_NUMBER;
+
 	TArray<int32> Indices;
-	for (int32 i = 0; i < CardPool.Num(); i++) Indices.Add(i);
+	for (int32 i = 0; i < CardPool.Num(); i++)
+	{
+		if (CardPool[i].Get<2>() == EJYNMugongCardType::XPMagnet && bXPMagnetMaxed)
+		{
+			continue;  // 최대치 (500cm) 도달 시 카드 풀에서 제외
+		}
+		Indices.Add(i);
+	}
 	for (int32 i = Indices.Num() - 1; i > 0; i--)
 	{
 		int32 j = FMath::RandRange(0, i);
 		Indices.Swap(i, j);
 	}
-
-	// 플레이어 캐릭터 (암기술 next-stage description용)
-	AJYNPlayerCharacter* Player = Cast<AJYNPlayerCharacter>(GetPlayerPawn());
 
 	TArray<FJYNMugongCardInfo> Result;
 	for (int32 k = 0; k < FMath::Min(3, Indices.Num()); k++)

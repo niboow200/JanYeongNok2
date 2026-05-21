@@ -28,12 +28,28 @@ void AJYNXPSoul::Tick(float DeltaTime)
 
 	if (bCollected) return;
 
-	// 자석 효과: 플레이어가 MagnetRange 안에 있으면 Soul이 플레이어 쪽으로 이동
 	AActor* Player = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
 	if (!Player) return;
 
-	const float DistSq = FVector::DistSquared(GetActorLocation(), Player->GetActorLocation());
-	if (DistSq <= FMath::Square(MagnetRange))
+	// Magnet range 안에 한 번 들어오면 latched → 멀어져도 계속 따라옴
+	if (!bMagnetLatched)
+	{
+		// PlayerCharacter의 XPMagnetBonus 적용
+		float EffectiveRange = MagnetRange;
+		if (AJYNPlayerCharacter* JYNPlayer = Cast<AJYNPlayerCharacter>(Player))
+		{
+			EffectiveRange += JYNPlayer->XPMagnetBonus;
+		}
+
+		const float DistSq = FVector::DistSquared(GetActorLocation(), Player->GetActorLocation());
+		if (DistSq <= FMath::Square(EffectiveRange))
+		{
+			bMagnetLatched = true;
+		}
+	}
+
+	// Latched 상태면 항상 플레이어 쪽으로 이동
+	if (bMagnetLatched)
 	{
 		const FVector Dir = (Player->GetActorLocation() - GetActorLocation()).GetSafeNormal();
 		SetActorLocation(GetActorLocation() + Dir * MagnetSpeed * DeltaTime);

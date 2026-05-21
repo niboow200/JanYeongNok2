@@ -33,6 +33,7 @@ enum class EJYNMugongCardType : uint8
 	Pyochang        UMETA(DisplayName="표창"),           // 회전 표창 활성화 / +1개
 	PyochangSpeed   UMETA(DisplayName="표창 가속"),      // 회전 속도 +25%
 	PyochangDamage  UMETA(DisplayName="표창 강화"),      // 데미지 +20%
+	XPMagnet        UMETA(DisplayName="혼령통찰"),       // XP Soul 흡수 범위 +100cm
 };
 
 /** 카드 한 장의 데이터 */

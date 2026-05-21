@@ -9,6 +9,8 @@ class UJYNPlayerHUD;
 class UJYNLevelUpScreen;
 class UJYNGameOverScreen;
 class UUserWidget;
+class USoundBase;
+class UAudioComponent;
 struct FJYNMugongCardInfo;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnScoreChanged, int32, NewScore);
@@ -58,6 +60,18 @@ public:
 
 	UPROPERTY()
 	TObjectPtr<UJYNGameOverScreen> GameOverWidgetInstance;
+
+	// ── BGM ──────────────────────────────────────────────
+	/** 배경 음악 (BP에서 할당) */
+	UPROPERTY(EditAnywhere, Category="Audio")
+	TObjectPtr<USoundBase> BGMSound;
+
+	/** BGM 볼륨 */
+	UPROPERTY(EditAnywhere, Category="Audio", meta=(ClampMin=0.0f, ClampMax=2.0f))
+	float BGMVolume = 0.7f;
+
+	UPROPERTY()
+	TObjectPtr<UAudioComponent> BGMComponent;
 
 	// ── 스폰 설정 ──────────────────────────────────────────
 	/** 스폰할 적 클래스 목록 (BP에서 설정) */
@@ -136,6 +150,20 @@ public:
 	/** 메인 메뉴 표시 */
 	UFUNCTION(BlueprintCallable, Category="UI")
 	void ShowMainMenu();
+
+	/** BGM 재생 시작 (반복) */
+	UFUNCTION(BlueprintCallable, Category="Audio")
+	void StartBGM();
+
+	/** BGM 정지 */
+	UFUNCTION(BlueprintCallable, Category="Audio")
+	void StopBGM();
+
+private:
+	UFUNCTION()
+	void OnBGMFinished();
+
+public:
 
 	/** 런 시작 */
 	UFUNCTION(BlueprintCallable, Category="Run")

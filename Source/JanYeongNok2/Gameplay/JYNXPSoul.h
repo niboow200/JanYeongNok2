@@ -53,4 +53,5 @@ private:
 	void Collect(AActor* Player);
 
 	bool bCollected = false;
+	bool bMagnetLatched = false;  // 한 번 magnet 시작하면 끝까지 따라옴 (sticky)
 };
