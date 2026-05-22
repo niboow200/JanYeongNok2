@@ -40,11 +40,11 @@ void AJYNPyochangOrbit::Tick(float DeltaTime)
 	if (CurrentRotation > 360.0f) CurrentRotation -= 360.0f;
 
 	const int32 Count = PyochangSpheres.Num();
-	if (Count == 0) return;
+	if (Count == 0 || DeltaTime <= 0.0f) return;
 
 	const float AngleStep = 360.0f / Count;
 
-	// 각 표창 위치 갱신 (sphere는 collision, niagara는 자동으로 따라감)
+	// 각 표창 위치 갱신 + velocity 강제 update (Niagara trail이 인식하도록)
 	for (int32 i = 0; i < Count; i++)
 	{
 		USphereComponent* Sphere = PyochangSpheres[i];
@@ -58,7 +58,16 @@ void AJYNPyochangOrbit::Tick(float DeltaTime)
 			FMath::Sin(AngleRad) * OrbitRadius,
 			0.0f
 		);
+
+		// 이전 world position 기록
+		const FVector OldWorldPos = Sphere->GetComponentLocation();
+
 		Sphere->SetRelativeLocation(NewLocalPos);
+
+		// Velocity 강제 update (Niagara Trail emitter가 사용)
+		const FVector NewWorldPos = Sphere->GetComponentLocation();
+		const FVector Velocity = (NewWorldPos - OldWorldPos) / DeltaTime;
+		Sphere->ComponentVelocity = Velocity;
 	}
 }
 
